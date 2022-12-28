@@ -1,5 +1,6 @@
 ﻿using SimpleSock.Buffers;
 using SimpleSock.Enums;
+using SimpleSock.Extensions;
 using SimpleSock.Interfaces;
 using System;
 using System.Net;
@@ -119,13 +120,18 @@ namespace SimpleSock.Models
             }
             catch (Exception ex)
             {
-                //if (ex.InnerException is SocketException se)
-                //{
-                //    if (se.IsIgnorableSocketException() == false)
-                //        _Logger.WriteErrorLog(se);
-                //}
-                //else
-                //    _Logger.WriteErrorLog(ex);
+                if (ex.InnerException is SocketException se)
+                {
+                    if (se.IsIgnorableSocketException() == false)
+                    {
+                        //_Logger.WriteErrorLog(se);
+                    }
+
+                }
+                else
+                {
+                    //    _Logger.WriteErrorLog(ex);
+                }
             }
 
             recvBuffer.Dispose();
@@ -165,11 +171,11 @@ namespace SimpleSock.Models
             {
                 if (ex.InnerException is SocketException se)
                 {
-                    //if (se.IsIgnorableSocketException() == false)
-                    //{
-                    //_Logger.WriteErrorLog(se);
-                    throw ex;
-                    //}
+                    if (se.IsIgnorableSocketException() == false)
+                    {
+                        //_Logger.WriteErrorLog(se);
+                        throw ex;
+                    }
                 }
                 else
                 {
