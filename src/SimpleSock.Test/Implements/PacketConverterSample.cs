@@ -1,12 +1,12 @@
-﻿using SimpleSock.Interfaces;
-using SimpleSock.Models;
+﻿using SimpleSock.Helpers;
+using SimpleSock.Interfaces;
+using SimpleSock.Test.Models;
 using System;
-using System.Runtime.InteropServices;
 using System.Text;
 
-namespace SimpleSock.Implements
+namespace SimpleSock.Test.Implements
 {
-    public class DefaultReceiveFilter : IRecieveFilter<Packet>
+    public class PacketConverterSample : IPacketConverter<Packet>
     {
         public bool Filter(byte[] buffer, int bytesBufferd, ref int bytesOffset, out Packet data)
         {
@@ -54,6 +54,27 @@ namespace SimpleSock.Implements
             {
                 bytesOffset = requiredLength;
             }
+        }
+
+        public byte[] ToBytes(Packet packet)
+        {
+            var totalSize = packet.GetSize();
+            byte[] bytes = new byte[totalSize];
+
+            // Header
+            bytes[0] = packet.Header.Stx;
+            BinHelper.GetBytes(packet.Header.DataSize, bytes, 1);
+            BinHelper.GetBytes(packet.Header.ProtocolId, bytes, 5);
+            BinHelper.GetBytes(packet.Header.PacketId, bytes, 7);
+
+            // Data
+            if (packet.Data != null)
+                Encoding.Unicode.GetBytes(packet.Data, 0, packet.Data.Length, bytes, PacketHeader.Size);
+
+            // Tail
+            bytes[totalSize - 1] = packet.Tail.Etx;
+
+            return bytes;
         }
     }
 

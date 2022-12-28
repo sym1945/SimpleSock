@@ -1,5 +1,7 @@
 ﻿using BenchmarkDotNet.Running;
+using SimpleSock.Interfaces;
 using SimpleSock.Models;
+using SimpleSock.Test.Implements;
 using SimpleSock.Test.Models;
 using System;
 using System.Buffers.Binary;
@@ -20,10 +22,9 @@ namespace SimpleSock.Test
         static void Main(string[] args)
         {
             //BenchmarkRunner.Run<MarshalBenchmark>();
-            SimpleSockClient sockCli = null;
-            int id = 1;
+            SimpleSockClient<Packet> sockCli = null;
 
-            Action<Packet> onRecv = (packet) =>
+            Action<ISession, Packet> onRecv = (session, packet) =>
             {
                 Console.WriteLine("Recv:");
                 Console.WriteLine(packet);
@@ -35,15 +36,7 @@ namespace SimpleSock.Test
                     repPacket = Packet.CreateLinktestRsp(packet.Header.PacketId);
                 else
                 {
-                    DummyData a = new DummyData
-                    {
-                        Id = id++,
-                        Name = Path.GetRandomFileName()
-                    };
-
-                    var json = JsonSerializer.Serialize<DummyData>(a);
-
-                    repPacket = Packet.CreateSendPacket(json);
+                    repPacket = Packet.CreateSendPacket(packet.Data);
                 }
 
 
@@ -63,7 +56,7 @@ namespace SimpleSock.Test
                         });
             };
 
-            sockCli = new SimpleSockClient(onRecv);
+            sockCli = new SimpleSockClient<Packet>("127.0.0.1", 5020, new PacketConverterSample(), onRecv);
 
             Task conn = sockCli.ConnectAsync()
                 .ContinueWith(d => Console.WriteLine("Connected!"));

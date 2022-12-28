@@ -1,5 +1,6 @@
 ﻿using BenchmarkDotNet.Attributes;
 using SimpleSock.Models;
+using SimpleSock.Test.Models;
 using System;
 using System.Buffers.Binary;
 using System.Runtime.CompilerServices;

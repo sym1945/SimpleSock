@@ -1,5 +1,5 @@
-﻿using SimpleSock.Implements;
-using SimpleSock.Interfaces;
+﻿using SimpleSock.Interfaces;
+using System;
 
 namespace SimpleSock.Containers
 {
@@ -7,7 +7,7 @@ namespace SimpleSock.Containers
     {
         public ILogger GetLogger()
         {
-            return new ConsoleLogger();
+            throw new NotImplementedException();
         }
     }
 }

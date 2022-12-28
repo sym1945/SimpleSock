@@ -2,7 +2,7 @@
 using System;
 using System.Threading.Tasks;
 
-namespace SimpleSock.Implements
+namespace SimpleSock.Test.Implements
 {
     public class ConsoleLogger : ILogger
     {

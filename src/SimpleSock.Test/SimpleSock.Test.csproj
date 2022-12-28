@@ -172,7 +172,12 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ConvertBenchmark.cs" />
+    <Compile Include="Implements\ConsoleLogger.cs" />
+    <Compile Include="Implements\PacketConverterSample.cs" />
     <Compile Include="Models\DataClass.cs" />
+    <Compile Include="Models\Packet.cs" />
+    <Compile Include="Models\PacketHeader.cs" />
+    <Compile Include="Models\PacketTail.cs" />
     <Compile Include="StructBenchmark.cs" />
     <Compile Include="MarshalBenchmark.cs" />
     <Compile Include="Program.cs" />
