@@ -13,6 +13,7 @@ namespace SimpleSock.Models
 {
     public class Session<T> : ISession
     {
+        private readonly Guid _SessionId;
         private readonly TcpClient _Client;
         private readonly NetworkStream _Stream;
         private readonly IPacketConverter<T> _PacketConverter;
@@ -23,6 +24,11 @@ namespace SimpleSock.Models
         private Task _RecvTask;
         private CancellationTokenSource _RecvTaskCancller;
 
+
+        public Guid SessionId
+        {
+            get { return _SessionId; }
+        }
 
         public SessionState State
         {
@@ -45,6 +51,7 @@ namespace SimpleSock.Models
 
         public Session(TcpClient client, IPacketConverter<T> packetConverter)
         {
+            _SessionId = Guid.NewGuid();
             _Client = client;
             _Stream = client.GetStream();
             _PacketConverter = packetConverter;

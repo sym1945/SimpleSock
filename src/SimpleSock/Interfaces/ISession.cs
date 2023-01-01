@@ -7,6 +7,7 @@ namespace SimpleSock.Interfaces
 {
     public interface ISession : IDisposable
     {
+        Guid SessionId { get; }
         SessionState State { get; }
         IPEndPoint RemoteEndPoint { get; }
         IPEndPoint LocalEndPoint { get; }

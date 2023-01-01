@@ -8,18 +8,18 @@ using System.Threading.Tasks;
 
 namespace SimpleSock
 {
-    public class SimpleSockClient<T>
+    public class SimpleSockClient<TPacket>
     {
-        private readonly IPacketConverter<T> _PacketConverter;
+        private readonly IPacketConverter<TPacket> _PacketConverter;
         private readonly SemaphoreSlim _AsyncLock = new SemaphoreSlim(1, 1);
         private readonly string _IP;
         private readonly int _Port;
-        private Session<T> _Session;
+        private Session<TPacket> _Session;
         
-        private Action<ISession, T> _OnRecv;
+        private Action<ISession, TPacket> _OnRecv;
 
 
-        public SimpleSockClient(string ip, int port, IPacketConverter<T> packetConverter, Action<ISession, T> onRecv = null)
+        public SimpleSockClient(string ip, int port, IPacketConverter<TPacket> packetConverter, Action<ISession, TPacket> onRecv = null)
         {
             _IP = ip;
             _Port = port;
@@ -41,7 +41,7 @@ namespace SimpleSock
                 await client.ConnectAsync(_IP, _Port);
 
                 // Session 생성
-                var session = new Session<T>(client, _PacketConverter);
+                var session = new Session<TPacket>(client, _PacketConverter);
                 session.Received += Session_Received;
 
                 _Session = session;
@@ -87,7 +87,7 @@ namespace SimpleSock
             }
         }
 
-        public Task<int> SendAsync(T packet)
+        public Task<int> SendAsync(TPacket packet)
         {
             if (_Session == null)
                 Task.FromResult(0);
@@ -95,7 +95,7 @@ namespace SimpleSock
             return _Session.SendAsync(packet);
         }
 
-        private void Session_Received(ISession session, T packet)
+        private void Session_Received(ISession session, TPacket packet)
         {
             if (_OnRecv != null)
                 _OnRecv.Invoke(session, packet);
