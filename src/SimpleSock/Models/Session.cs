@@ -24,6 +24,8 @@ namespace SimpleSock.Models
         private Task _RecvTask;
         private CancellationTokenSource _RecvTaskCancller;
 
+        private Action<ISession> _OnClosed;
+
 
         public Guid SessionId
         {
@@ -47,9 +49,10 @@ namespace SimpleSock.Models
 
 
         public event Action<ISession, T> Received;
+        
 
 
-        public Session(TcpClient client, IPacketConverter<T> packetConverter)
+        public Session(TcpClient client, IPacketConverter<T> packetConverter, Action<ISession> onClose = null)
         {
             _SessionId = Guid.NewGuid();
             _Client = client;
@@ -58,6 +61,8 @@ namespace SimpleSock.Models
 
             RemoteEndPoint = (IPEndPoint)client.Client.RemoteEndPoint;
             LocalEndPoint = (IPEndPoint)client.Client.LocalEndPoint;
+
+            _OnClosed = onClose;
 
             BeginReceive();
         }
@@ -205,7 +210,7 @@ namespace SimpleSock.Models
             return sentBytes;
         }
 
-        protected virtual void Close()
+        private void Close()
         {
             if (_Closed || _IsClosing)
                 return;
@@ -230,6 +235,8 @@ namespace SimpleSock.Models
             _IsClosing = false;
 
             _Connected = false;
+
+            _OnClosed?.Invoke(this);
             //_Logger.WriteDebugLog($"END CLOSE, Session={this}");
         }
 

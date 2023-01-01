@@ -22,7 +22,7 @@ namespace SimpleSock.Test
         static void Main(string[] args)
         {
             //BenchmarkRunner.Run<MarshalBenchmark>();
-            SimpleSockClient<Packet> sockCli = null;
+            SimpleSockClient<Packet> client = null;
 
             Action<ISession, Packet> onRecv = (session, packet) =>
             {
@@ -34,34 +34,63 @@ namespace SimpleSock.Test
 
                 if (packet.Header.ProtocolId == (ushort)ProtocolList.LINKTEST_REQ)
                     repPacket = Packet.CreateLinktestRsp(packet.Header.PacketId);
-                else
-                {
-                    repPacket = Packet.CreateSendPacket(packet.Data);
-                }
+                //else
+                //{
+                //    repPacket = Packet.CreateSendPacket(packet.Data);
+                //}
 
+                //sockCli.SendAsync(repPacket)
+                //        .ContinueWith(d =>
+                //        {
+                //            var sendMsg = string.Empty;
 
-                sockCli.SendAsync(repPacket)
-                        .ContinueWith(d =>
-                        {
-                            var sendMsg = string.Empty;
+                //            if (d.IsFaulted)
+                //                sendMsg = "Err - Send Failed:";
+                //            else
+                //                sendMsg = "Send:";
 
-                            if (d.IsFaulted)
-                                sendMsg = "Err - Send Failed:";
-                            else
-                                sendMsg = "Send:";
-
-                            Console.WriteLine(sendMsg);
-                            Console.WriteLine(repPacket);
-                            Console.WriteLine();
-                        });
+                //            Console.WriteLine(sendMsg);
+                //            Console.WriteLine(repPacket);
+                //            Console.WriteLine();
+                //        });
             };
 
-            sockCli = new SimpleSockClient<Packet>("127.0.0.1", 5020, new PacketConverterSample(), onRecv);
+            client = new SimpleSockClient<Packet>("127.0.0.1", 5020, new PacketConverterSample(), onRecv);
 
-            Task conn = sockCli.ConnectAsync()
+            Task conn = client.ConnectAsync()
                 .ContinueWith(d => Console.WriteLine("Connected!"));
 
-            Console.ReadLine();
+            bool loop = true;
+            while (loop)
+            {
+                var input = Console.ReadLine();
+
+                switch (input.ToLower())
+                {
+                    case "exit": loop = false; break;
+                    default:
+                        {
+                            var packet = Packet.CreateSendPacket(input);
+
+                            client.SendAsync(packet)
+                                .ContinueWith(d =>
+                                {
+                                    var sendMsg = string.Empty;
+
+                                    if (d.IsFaulted)
+                                        sendMsg = "Err - Send Failed:";
+                                    else
+                                        sendMsg = "Send:";
+
+                                    Console.WriteLine(sendMsg);
+                                    Console.WriteLine(packet);
+                                    Console.WriteLine();
+                                });
+
+                            break;
+                        }
+                }
+            }
         }
 
         private static void PrintBytes(byte[] bytes)

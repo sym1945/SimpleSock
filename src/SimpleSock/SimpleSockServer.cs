@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -30,12 +31,15 @@ namespace SimpleSock
 
 
 
-        public SimpleSockServer(string ip, int port, IPacketConverter<TPacket> packetConverter)
+        public SimpleSockServer(string ip, int port, IPacketConverter<TPacket> packetConverter, Action<ISession, TPacket> onRecv = null, Action<ISession> onAccepted = null)
         {
             _SessionContainer = new SessionContainer<Session<TPacket>>();
             _IP = ip;
             _Port = port;
             _PacketConverter = packetConverter;
+            
+            _OnRecv = onRecv;
+            _OnAccepted = onAccepted;
         }
 
         public void Start()
@@ -67,23 +71,30 @@ namespace SimpleSock
 
             _Listner.Stop();
             _Listner = null;
+
+            if (_AcceptTask != null)
+                _AcceptTask.GetAwaiter().GetResult();
+
+            _SessionContainer.Clear();
         }
 
         private async Task DoAcceptAsync(TcpListener listener, CancellationToken cancelToken)
         {
+            Console.WriteLine("[EV] Accept start");
+
             try
             {
                 while (!cancelToken.IsCancellationRequested)
                 {
                     var acceptedClient = await listener.AcceptTcpClientAsync();
 
-                    Session<TPacket> session = new Session<TPacket>(acceptedClient, _PacketConverter);
+                    Session<TPacket> session = new Session<TPacket>(acceptedClient, _PacketConverter, onClose: Session_Closed);
                     session.Received += Session_Received;
 
-                    if (_SessionContainer.AddSession(session))
-                        _OnAccepted?.Invoke(session);
-                    else
-                        session.Dispose();
+                    //if (_SessionContainer.AddSession(session))
+                    //    _OnAccepted?.Invoke(session);
+                    //else
+                    //    session.Dispose();
                 }
             }
             catch (OperationCanceledException)
@@ -106,6 +117,15 @@ namespace SimpleSock
                     //    _Logger.WriteErrorLog(ex);
                 }
             }
+
+            Console.WriteLine("[EV] Accept end");
+        }
+
+        private void Session_Closed(ISession session)
+        {
+            Console.WriteLine($"[EV] session closed: {session}");
+
+            _SessionContainer.RemoveSession(session.SessionId, out _);
         }
 
         private void Session_Received(ISession session, TPacket packet)
@@ -125,6 +145,11 @@ namespace SimpleSock
             _SessionMap = new ConcurrentDictionary<Guid, TSession>(new GuidEqualityComparer());
         }
 
+        public IEnumerable<TSession> GetSessions()
+        {
+            return _SessionMap.Values;
+        }
+
         public bool GetSession(Guid sessionId, out TSession session)
         {
             return _SessionMap.TryGetValue(sessionId, out session);
@@ -137,17 +162,32 @@ namespace SimpleSock
 
         public bool RemoveSession(TSession session)
         {
-            return _SessionMap.TryRemove(session.SessionId, out _);
+            return RemoveSessionInner(session.SessionId, out _);
         }
 
         public bool RemoveSession(Guid sessionId, out TSession session)
         {
-            return _SessionMap.TryRemove(sessionId, out session);
+            return RemoveSessionInner(sessionId, out session);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private bool RemoveSessionInner(Guid sessionId, out TSession session)
+        {
+            bool result = _SessionMap.TryRemove(sessionId, out session);
+            session?.Dispose();
 
+            return result;
+        }
 
+        public void Clear()
+        {
+            foreach (var session in _SessionMap.Values)
+                session.Dispose();
+
+            _SessionMap.Clear();
+        }
     }
+
 
     class GuidEqualityComparer : IEqualityComparer<Guid>
     {
