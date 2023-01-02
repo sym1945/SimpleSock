@@ -6,7 +6,7 @@ using System.Text;
 namespace SimpleSock.Test.Models
 {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
-    public readonly struct PacketHeader
+    public struct PacketHeader
     {
         public const byte STX = 0x02;
         public readonly static int Size;

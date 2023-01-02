@@ -12,7 +12,12 @@ namespace SimpleSock.Interfaces
         IPEndPoint RemoteEndPoint { get; }
         IPEndPoint LocalEndPoint { get; }
 
-        Task<int> SendAsync(byte[] bytes);
+        //Task<int> SendAsync(byte[] bytes);
         Task CloseAsync();
+    }
+
+    public interface ISession<TPacket> : ISession
+    {
+        Task<int> SendAsync(TPacket packet);
     }
 }

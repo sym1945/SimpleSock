@@ -12,19 +12,38 @@ namespace SimpleSock
     {
         private readonly IPacketConverter<TPacket> _PacketConverter;
         private readonly SemaphoreSlim _AsyncLock = new SemaphoreSlim(1, 1);
+
         private readonly string _IP;
         private readonly int _Port;
-        private Session<TPacket> _Session;
-        
-        private Action<ISession, TPacket> _OnRecv;
+
+        private readonly Action<ISession, TPacket> _OnRecv;
+        private readonly Action<ISession, TPacket> _OnSent;
+        private readonly Action<ISession> _OnClosed;
+        private readonly Action<string> _OnEvent;
+        private readonly Action<Exception> _OnError;
+
+        private ISession<TPacket> _Session;
 
 
-        public SimpleSockClient(string ip, int port, IPacketConverter<TPacket> packetConverter, Action<ISession, TPacket> onRecv = null)
+        public SimpleSockClient(
+            string ip
+            , int port
+            , IPacketConverter<TPacket> packetConverter
+            , Action<ISession, TPacket> onRecv = null
+            , Action<ISession, TPacket> onSent = null
+            , Action<ISession> onClose = null
+            , Action<string> onEvent = null
+            , Action<Exception> onError = null)
         {
             _IP = ip;
             _Port = port;
             _PacketConverter = packetConverter;
-            _OnRecv = onRecv;
+
+            _OnRecv = onRecv ?? new Action<ISession, TPacket>((s, p) => { });
+            _OnSent = onSent ?? new Action<ISession, TPacket>((s, p) => { });
+            _OnClosed = onClose ?? new Action<ISession>((s) => { });
+            _OnEvent = onEvent ?? new Action<string>((m) => { });
+            _OnError = onError ?? new Action<Exception>((e) => { });
         }
 
         public async Task ConnectAsync()
@@ -36,20 +55,27 @@ namespace SimpleSock
                 if (_Session != null)
                     return;
 
-                //_Logger.Write($"TRY CONNECT...");
+                _OnEvent?.Invoke($"try connect to IP: {_IP}, Port: {_Port}");
+
                 TcpClient client = new TcpClient();
                 await client.ConnectAsync(_IP, _Port);
 
-                // Session 생성
-                var session = new Session<TPacket>(client, _PacketConverter);
-                session.Received += Session_Received;
+                _OnEvent?.Invoke($"connected IP: {_IP}, Port: {_Port}");
 
+                // Session 생성
+                var session = new Session<TPacket>(
+                    client: client
+                    , packetConverter: _PacketConverter
+                    , onRecv: _OnRecv
+                    , onSent: _OnSent
+                    , onClose: _OnClosed
+                    , onError: _OnError
+                    , onEvent: _OnEvent
+                );
                 _Session = session;
             }
             catch (Exception ex)
             {
-                //_Logger.WriteErrorLog(ex);
-
                 throw ex;
             }
             finally
@@ -67,19 +93,14 @@ namespace SimpleSock
                 if (_Session == null)
                     return;
 
-                //_Logger.Write($"STOPPING...");
-
                 await _Session.CloseAsync();
 
                 _Session.Dispose();
                 _Session = null;
-
-                //_Logger.Write($"STOPPED");
             }
             catch (Exception ex)
             {
-                //_Logger.WriteErrorLog(ex);
-                throw ex;
+                _OnError.Invoke(ex);
             }
             finally
             {
@@ -90,15 +111,9 @@ namespace SimpleSock
         public Task<int> SendAsync(TPacket packet)
         {
             if (_Session == null)
-                Task.FromResult(0);
+                return Task.FromResult(0);
 
             return _Session.SendAsync(packet);
-        }
-
-        private void Session_Received(ISession session, TPacket packet)
-        {
-            if (_OnRecv != null)
-                _OnRecv.Invoke(session, packet);
         }
 
     }

@@ -33,32 +33,61 @@ namespace SimpleSock.Test
                 Packet repPacket = null;
 
                 if (packet.Header.ProtocolId == (ushort)ProtocolList.LINKTEST_REQ)
+                {
                     repPacket = Packet.CreateLinktestRsp(packet.Header.PacketId);
-                //else
-                //{
-                //    repPacket = Packet.CreateSendPacket(packet.Data);
-                //}
-
-                //sockCli.SendAsync(repPacket)
-                //        .ContinueWith(d =>
-                //        {
-                //            var sendMsg = string.Empty;
-
-                //            if (d.IsFaulted)
-                //                sendMsg = "Err - Send Failed:";
-                //            else
-                //                sendMsg = "Send:";
-
-                //            Console.WriteLine(sendMsg);
-                //            Console.WriteLine(repPacket);
-                //            Console.WriteLine();
-                //        });
+                    client.SendAsync(repPacket);
+                }
             };
 
-            client = new SimpleSockClient<Packet>("127.0.0.1", 5020, new PacketConverterSample(), onRecv);
+            Action<Exception> onError = (e) =>
+            {
+                Console.WriteLine($"Error: {e.Message}");
+            };
 
-            Task conn = client.ConnectAsync()
-                .ContinueWith(d => Console.WriteLine("Connected!"));
+            Action<ISession> onClose = (session) =>
+            {
+                Console.WriteLine($"Event: Closed ({session})");
+            };
+
+            Action<string> onEvent = (e) =>
+            {
+                Console.WriteLine(e);
+            };
+
+            Action<ISession, Packet> onSent = (session, packet) =>
+            {
+                Console.WriteLine("Send:");
+                Console.WriteLine(packet);
+                Console.WriteLine();
+            };
+
+            client = new SimpleSockClient<Packet>("127.0.0.1", 5020, new PacketConverterSample()
+                , onRecv: onRecv
+                , onSent: onSent
+                , onEvent: onEvent
+                , onError: onError
+                , onClose: onClose);
+
+            Task connTask() => Task.Run(async () =>
+            {
+                bool isConnecetd = false;
+
+                while (!isConnecetd)
+                {
+                    try
+                    {
+                        await client.ConnectAsync();
+
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        onError(ex);
+                    }
+                }
+            });
+
+            connTask();
 
             bool loop = true;
             while (loop)
@@ -68,25 +97,13 @@ namespace SimpleSock.Test
                 switch (input.ToLower())
                 {
                     case "exit": loop = false; break;
+                    case "stop": var diconTask = client.DisconnectAsync(); break;
+                    case "start": var conTask = connTask(); break;
                     default:
                         {
                             var packet = Packet.CreateSendPacket(input);
 
-                            client.SendAsync(packet)
-                                .ContinueWith(d =>
-                                {
-                                    var sendMsg = string.Empty;
-
-                                    if (d.IsFaulted)
-                                        sendMsg = "Err - Send Failed:";
-                                    else
-                                        sendMsg = "Send:";
-
-                                    Console.WriteLine(sendMsg);
-                                    Console.WriteLine(packet);
-                                    Console.WriteLine();
-                                });
-
+                            client.SendAsync(packet);
                             break;
                         }
                 }

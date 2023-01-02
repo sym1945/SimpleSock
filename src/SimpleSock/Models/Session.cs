@@ -11,20 +11,23 @@ using System.Threading.Tasks;
 
 namespace SimpleSock.Models
 {
-    public class Session<T> : ISession
+    public class Session<TPacket> : ISession<TPacket>
     {
         private readonly Guid _SessionId;
         private readonly TcpClient _Client;
         private readonly NetworkStream _Stream;
-        private readonly IPacketConverter<T> _PacketConverter;
+        private readonly IPacketConverter<TPacket> _PacketConverter;
+
+        private readonly Action<ISession, TPacket> _OnRecv;
+        private readonly Action<ISession, TPacket> _OnSent;
+        private readonly Action<ISession> _OnClosed;
+        private readonly Action<string> _OnEvent;
+        private readonly Action<Exception> _OnError;
 
         private bool _Disposed, _IsDisposing;
         private bool _Closed, _IsClosing;
-        private bool _Connected = true;
         private Task _RecvTask;
         private CancellationTokenSource _RecvTaskCancller;
-
-        private Action<ISession> _OnClosed;
 
 
         public Guid SessionId
@@ -36,7 +39,7 @@ namespace SimpleSock.Models
         {
             get
             {
-                if (_Connected == false)
+                if (_Closed)
                     return SessionState.NotConnected;
                 else
                     return SessionState.Connected;
@@ -48,11 +51,15 @@ namespace SimpleSock.Models
         public IPEndPoint LocalEndPoint { get; }
 
 
-        public event Action<ISession, T> Received;
-        
 
-
-        public Session(TcpClient client, IPacketConverter<T> packetConverter, Action<ISession> onClose = null)
+        public Session(
+            TcpClient client
+            , IPacketConverter<TPacket> packetConverter
+            , Action<ISession, TPacket> onRecv = null
+            , Action<ISession, TPacket> onSent = null
+            , Action<ISession> onClose = null
+            , Action<string> onEvent = null
+            , Action<Exception> onError = null)
         {
             _SessionId = Guid.NewGuid();
             _Client = client;
@@ -62,7 +69,11 @@ namespace SimpleSock.Models
             RemoteEndPoint = (IPEndPoint)client.Client.RemoteEndPoint;
             LocalEndPoint = (IPEndPoint)client.Client.LocalEndPoint;
 
-            _OnClosed = onClose;
+            _OnRecv = onRecv ?? new Action<ISession, TPacket>((s, p) => { });
+            _OnSent = onSent ?? new Action<ISession, TPacket>((s, p) => { });
+            _OnClosed = onClose ?? new Action<ISession>((s) => { });
+            _OnEvent = onEvent ?? new Action<string>((m) => { });
+            _OnError = onError ?? new Action<Exception>((e) => { });
 
             BeginReceive();
         }
@@ -73,7 +84,7 @@ namespace SimpleSock.Models
 
         public void BeginReceive()
         {
-            if (_Connected == false)
+            if (_Closed)
                 return;
             if (_RecvTask != null || _RecvTaskCancller != null)
                 return;
@@ -84,15 +95,17 @@ namespace SimpleSock.Models
 
         private async Task DoReceiveAsync(NetworkStream netStream, CancellationToken cancelToken)
         {
-            var recvBuffer = new ReceiveBuffer(4096);
-            var byteConsumed = 0;
-            //_Logger.WriteDebugLog($"START RECEIVE, Session={this}");
+            ReceiveBuffer recvBuffer = null;
 
             try
             {
+                recvBuffer = new ReceiveBuffer(4096);
+                var byteConsumed = 0;
+
+                _OnEvent.Invoke($"Start ReceiveTask (Session: {this})");
+
                 while (!cancelToken.IsCancellationRequested && netStream.CanRead)
                 {
-                    //_Logger.WriteDebugLog($"BEGIN RECEIVE, Session={this}");
                     recvBuffer.CheckRemainingSize();
 
                     var bytesRead = await netStream.ReadAsync(
@@ -105,16 +118,13 @@ namespace SimpleSock.Models
                         break;
 
                     recvBuffer.Accumulate(bytesRead);
-                    //_Logger.WriteDebugLog($"END RECEIVE, Session={this}");
 
-                    if (!_Connected)
+                    if (_Closed)
                         break;
 
-                    while (_PacketConverter.Filter(recvBuffer.Bytes, recvBuffer.BytesBuffered, ref byteConsumed, out T packet))
+                    while (_PacketConverter.Filter(recvBuffer.Bytes, recvBuffer.BytesBuffered, ref byteConsumed, out TPacket packet))
                     {
-                        // do something
-                        if (Received != null)
-                            Received.Invoke(this, packet);
+                        _OnRecv.Invoke(this, packet);
                     }
 
                     if (byteConsumed > 0)
@@ -136,45 +146,52 @@ namespace SimpleSock.Models
                 {
                     if (se.IsIgnorableSocketException() == false)
                     {
-                        //_Logger.WriteErrorLog(se);
+                        _OnError.Invoke(se);
                     }
-
                 }
                 else
                 {
-                    //    _Logger.WriteErrorLog(ex);
+                    _OnError.Invoke(ex);
                 }
             }
 
-            recvBuffer.Dispose();
+            recvBuffer?.Dispose();
 
-            //_Logger.WriteDebugLog($"STOP RECEIVE, Session={this}");
+            _OnEvent.Invoke($"Stop ReceiveTask (Session: {this})");
         }
 
-        public Task<int> SendAsync(T packet)
-        {
-            return SendAsync(_PacketConverter.ToBytes(packet));
-        }
-
-        public Task<int> SendAsync(byte[] bytes)
+        public Task<int> SendAsync(TPacket packet)
         {
             if (_RecvTaskCancller == null)
                 return Task.FromResult(0);
 
-            return SendAsyncInner(_Stream, bytes, 0, bytes.Length, _RecvTaskCancller.Token);
+            return SendAsyncInner(_Stream, packet, _RecvTaskCancller.Token);
         }
 
-        protected async Task<int> SendAsyncInner(NetworkStream netStream, byte[] bytes, int offset, int count, CancellationToken cancelToken)
+        //public Task<int> SendAsync(byte[] bytes)
+        //{
+        //    if (_RecvTaskCancller == null)
+        //        return Task.FromResult(0);
+
+        //    return SendAsyncInner(_Stream, bytes, 0, bytes.Length, _RecvTaskCancller.Token);
+        //}
+
+        protected async Task<int> SendAsyncInner(NetworkStream netStream, TPacket packet, CancellationToken cancelToken)
         {
-            if (_Connected == false || !netStream.CanWrite)
+            if (_Closed || !netStream.CanWrite)
                 return 0;
+
+            var bytes = _PacketConverter.ToBytes(packet);
 
             var sentBytes = 0;
 
             try
             {
-                await netStream.WriteAsync(bytes, offset, count, cancelToken);
-                sentBytes = count;
+                await netStream.WriteAsync(bytes, 0, bytes.Length, cancelToken);
+                sentBytes = bytes.Length;
+            }
+            catch (OperationCanceledException)
+            {
             }
             catch (ObjectDisposedException)
             {
@@ -185,26 +202,18 @@ namespace SimpleSock.Models
                 {
                     if (se.IsIgnorableSocketException() == false)
                     {
-                        //_Logger.WriteErrorLog(se);
                         throw ex;
                     }
                 }
                 else
                 {
-                    //_Logger.WriteErrorLog(ex);
                     throw ex;
                 }
             }
 
             if (sentBytes > 0)
             {
-                //if (!option.PacketLogging.HasFlag(PacketLogging.None))
-                //{
-                //    bool includeMessage = (option.PacketLogging == PacketLogging.Default
-                //                        || option.PacketLogging.HasFlag(PacketLogging.Message)
-                //    );
-                //    //_Logger.WriteSendLog(this, packet.ToString(includeMessage));
-                //}
+                _OnSent.Invoke(this, packet);
             }
 
             return sentBytes;
@@ -216,28 +225,16 @@ namespace SimpleSock.Models
                 return;
             _IsClosing = true;
 
-            //_Logger.WriteDebugLog($"START CLOSE, Session={this}");
-            try
-            {
-                //_Client.Client.Shutdown(SocketShutdown.Both);
-                _Stream.Close();
-                _Client.Close();
+            _Stream.Close();
+            _Client.Close();
 
-                _Stream.Dispose();
-                _Client.Dispose();
-            }
-            catch (Exception ex)
-            {
-                //_Logger.WriteErrorLog(ex);
-            }
-            
+            _Stream.Dispose();
+            _Client.Dispose();
+
             _Closed = true;
             _IsClosing = false;
 
-            _Connected = false;
-
-            _OnClosed?.Invoke(this);
-            //_Logger.WriteDebugLog($"END CLOSE, Session={this}");
+            _OnClosed.Invoke(this);
         }
 
         public async Task CloseAsync()
@@ -246,6 +243,7 @@ namespace SimpleSock.Models
                 return;
 
             _RecvTaskCancller.Cancel();
+            _Stream.Close();
 
             await _RecvTask;
 

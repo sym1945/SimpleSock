@@ -1,15 +1,13 @@
-﻿using SimpleSock.Extensions;
+﻿using SimpleSock.Containers;
+using SimpleSock.Extensions;
 using SimpleSock.Interfaces;
 using SimpleSock.Models;
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
-using System.Runtime.CompilerServices;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+
 
 namespace SimpleSock
 {
@@ -22,13 +20,12 @@ namespace SimpleSock
         private readonly int _Port;
         private readonly int _BackLog = 1;
 
+        private readonly Action<ISession> _OnAccepted;
+        private readonly Action<ISession, TPacket> _OnRecv;
+
         private TcpListener _Listner;
         private CancellationTokenSource _Canceller;
         private Task _AcceptTask;
-
-        private Action<ISession> _OnAccepted;
-        private Action<ISession, TPacket> _OnRecv;
-
 
 
         public SimpleSockServer(string ip, int port, IPacketConverter<TPacket> packetConverter, Action<ISession, TPacket> onRecv = null, Action<ISession> onAccepted = null)
@@ -38,8 +35,8 @@ namespace SimpleSock
             _Port = port;
             _PacketConverter = packetConverter;
             
-            _OnRecv = onRecv;
-            _OnAccepted = onAccepted;
+            _OnRecv = onRecv ?? new Action<ISession, TPacket>((s, p) => { });
+            _OnAccepted = onAccepted ?? new Action<ISession>(s => { });
         }
 
         public void Start()
@@ -88,13 +85,17 @@ namespace SimpleSock
                 {
                     var acceptedClient = await listener.AcceptTcpClientAsync();
 
-                    Session<TPacket> session = new Session<TPacket>(acceptedClient, _PacketConverter, onClose: Session_Closed);
-                    session.Received += Session_Received;
+                    Session<TPacket> session = new Session<TPacket>(
+                        client: acceptedClient
+                        , packetConverter: _PacketConverter
+                        , onRecv: _OnRecv
+                        , onClose: Session_Closed
+                    );
 
-                    //if (_SessionContainer.AddSession(session))
-                    //    _OnAccepted?.Invoke(session);
-                    //else
-                    //    session.Dispose();
+                    if (_SessionContainer.AddSession(session))
+                        _OnAccepted.Invoke(session);
+                    else
+                        session.Dispose();
                 }
             }
             catch (OperationCanceledException)
@@ -127,78 +128,8 @@ namespace SimpleSock
 
             _SessionContainer.RemoveSession(session.SessionId, out _);
         }
-
-        private void Session_Received(ISession session, TPacket packet)
-        {
-            _OnRecv?.Invoke(session, packet);
-        }
+        
     }
 
-
-    class SessionContainer<TSession>
-        where TSession : ISession
-    {
-        private readonly ConcurrentDictionary<Guid, TSession> _SessionMap;
-
-        public SessionContainer()
-        {
-            _SessionMap = new ConcurrentDictionary<Guid, TSession>(new GuidEqualityComparer());
-        }
-
-        public IEnumerable<TSession> GetSessions()
-        {
-            return _SessionMap.Values;
-        }
-
-        public bool GetSession(Guid sessionId, out TSession session)
-        {
-            return _SessionMap.TryGetValue(sessionId, out session);
-        }
-
-        public bool AddSession(TSession session)
-        {
-            return _SessionMap.TryAdd(session.SessionId, session);
-        }
-
-        public bool RemoveSession(TSession session)
-        {
-            return RemoveSessionInner(session.SessionId, out _);
-        }
-
-        public bool RemoveSession(Guid sessionId, out TSession session)
-        {
-            return RemoveSessionInner(sessionId, out session);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool RemoveSessionInner(Guid sessionId, out TSession session)
-        {
-            bool result = _SessionMap.TryRemove(sessionId, out session);
-            session?.Dispose();
-
-            return result;
-        }
-
-        public void Clear()
-        {
-            foreach (var session in _SessionMap.Values)
-                session.Dispose();
-
-            _SessionMap.Clear();
-        }
-    }
-
-
-    class GuidEqualityComparer : IEqualityComparer<Guid>
-    {
-        public bool Equals(Guid x, Guid y)
-        {
-            return x.Equals(y);
-        }
-
-        public int GetHashCode(Guid obj)
-        {
-            return obj.GetHashCode();
-        }
-    }
+  
 }
