@@ -46,7 +46,7 @@ namespace SimpleSock.Test
 
             Action<ISession> onClose = (session) =>
             {
-                Console.WriteLine($"Event: Closed ({session})");
+                Console.WriteLine($"Event: Closed {session}");
             };
 
             Action<string> onLog = (e) =>

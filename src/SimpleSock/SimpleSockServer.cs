@@ -16,7 +16,7 @@ namespace SimpleSock
     {
         private readonly string _IP;
         private readonly int _Port;
-        private readonly int _BackLog = 1;
+        private readonly int? _AcceptLimit;
         private readonly IPacketConverter<TPacket> _PacketConverter;
         private readonly SessionContainer<Session<TPacket>> _SessionContainer;
         private readonly SemaphoreSlim _AsyncLock = new SemaphoreSlim(1, 1);
@@ -37,6 +37,7 @@ namespace SimpleSock
             string ip
             , int port
             , IPacketConverter<TPacket> packetConverter
+            , int? acceptLimit = 0
             , Action<ISession> onAccepted = null
             , Action<ISession, TPacket> onRecv = null
             , Action<ISession, TPacket> onSent = null
@@ -51,7 +52,8 @@ namespace SimpleSock
             _IP = ip;
             _Port = port;
             _PacketConverter = packetConverter;
-            
+            _AcceptLimit = acceptLimit;
+
             _OnAccepted = onAccepted ?? new Action<ISession>(s => { });
             _OnRecv = onRecv ?? new Action<ISession, TPacket>((s, p) => { });
             _OnSent = onSent ?? new Action<ISession, TPacket>((s, p) => { });
@@ -76,7 +78,7 @@ namespace SimpleSock
             _Listner = listener;
             _Canceller = new CancellationTokenSource();
 
-            _AcceptTask = DoAcceptAsync(_Listner, _Canceller.Token);
+            _AcceptTask = DoAcceptAsync(_Listner, _AcceptLimit, _Canceller.Token);
         }
 
         public void Stop()
@@ -100,7 +102,7 @@ namespace SimpleSock
             _Listner = null;
         }
 
-        private async Task DoAcceptAsync(TcpListener listener, CancellationToken cancelToken)
+        private async Task DoAcceptAsync(TcpListener listener, int? acceptLimit, CancellationToken cancelToken)
         {
             _OnLog.Invoke("start accept task...");
 
@@ -120,8 +122,23 @@ namespace SimpleSock
                         , onLog: _OnLog
                     );
 
+                    if (acceptLimit.HasValue
+                        && _SessionContainer.SessionCount >= acceptLimit.Value)
+                    {
+                        // 설정한 인원 외에 접속하면 바로 해제 박음 ㅅㄱ
+                        _OnLog.Invoke($"can't accept session: {session}. exceed limit session count: {acceptLimit.Value}");
+
+                        session.Dispose();
+                        continue;
+                    }
+
                     if (_SessionContainer.AddSession(session))
+                    {
+                        _OnLog.Invoke($"session added: {session}, total session count: {_SessionContainer.SessionCount}");
                         _OnAccepted.Invoke(session);
+
+                        session.StartReceive();
+                    }
                     else
                         session.Dispose();
                 }
@@ -154,10 +171,12 @@ namespace SimpleSock
         {
             _SessionContainer.RemoveSession(session.SessionId, out _);
 
+            _OnLog.Invoke($"session removed: {session}, total session count: {_SessionContainer.SessionCount}");
+
             _OnClosed.Invoke(session);
         }
-        
+
     }
 
-  
+
 }

@@ -11,6 +11,11 @@ namespace SimpleSock.Containers
     {
         private readonly ConcurrentDictionary<Guid, TSession> _SessionMap;
 
+        public int SessionCount
+        {
+            get { return _SessionMap.Count; }
+        }
+
         public SessionContainer()
         {
             _SessionMap = new ConcurrentDictionary<Guid, TSession>(new GuidEqualityComparer());

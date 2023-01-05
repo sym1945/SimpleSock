@@ -74,15 +74,13 @@ namespace SimpleSock.Models
             _OnClosed = onClose ?? new Action<ISession>((s) => { });
             _OnLog = onLog ?? new Action<string>((m) => { });
             _OnError = onError ?? new Action<Exception>((e) => { });
-
-            BeginReceive();
         }
         ~Session()
         {
             Dispose(false);
         }
 
-        public void BeginReceive()
+        internal void StartReceive()
         {
             if (_Closed)
                 return;
@@ -102,7 +100,7 @@ namespace SimpleSock.Models
                 recvBuffer = new ReceiveBuffer(4096);
                 var byteConsumed = 0;
 
-                _OnLog.Invoke($"start receive task (session: {this})");
+                _OnLog.Invoke($"start receive task... {this}");
 
                 while (!cancelToken.IsCancellationRequested && netStream.CanRead)
                 {
@@ -157,7 +155,7 @@ namespace SimpleSock.Models
 
             recvBuffer?.Dispose();
 
-            _OnLog.Invoke($"stop receive task (session: {this})");
+            _OnLog.Invoke($"stop receive task... {this}");
         }
 
         public Task<int> SendAsync(TPacket packet)
@@ -240,7 +238,11 @@ namespace SimpleSock.Models
         public async Task CloseAsync()
         {
             if (_RecvTaskCancller == null || _RecvTask == null)
+            {
+                // StartReceive 호출 전 Close 된 경우
+                Close();
                 return;
+            }
 
             _RecvTaskCancller.Cancel();
             _Stream.Close();
@@ -278,7 +280,7 @@ namespace SimpleSock.Models
 
         public override string ToString()
         {
-            return RemoteEndPoint.ToString();
+            return $"{{ sessionId: {_SessionId}, endPoint: {RemoteEndPoint.ToString()} }}";
         }
 
     }

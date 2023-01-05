@@ -75,6 +75,7 @@ namespace SimpleSock
                     , onError: _OnError
                     , onLog: _OnLog
                 );
+                session.StartReceive();
                 _Session = session;
             }
             catch (Exception ex)
