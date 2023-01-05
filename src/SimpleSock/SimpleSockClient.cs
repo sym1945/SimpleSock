@@ -1,4 +1,5 @@
-﻿using SimpleSock.Interfaces;
+﻿using SimpleSock.Helpers;
+using SimpleSock.Interfaces;
 using SimpleSock.Models;
 using System;
 using System.Net.Sockets;
@@ -10,16 +11,15 @@ namespace SimpleSock
 {
     public class SimpleSockClient<TPacket>
     {
-        private readonly IPacketConverter<TPacket> _PacketConverter;
-        private readonly SemaphoreSlim _AsyncLock = new SemaphoreSlim(1, 1);
-
         private readonly string _IP;
         private readonly int _Port;
+        private readonly IPacketConverter<TPacket> _PacketConverter;
+        private readonly SemaphoreSlim _AsyncLock = new SemaphoreSlim(1, 1);
 
         private readonly Action<ISession, TPacket> _OnRecv;
         private readonly Action<ISession, TPacket> _OnSent;
         private readonly Action<ISession> _OnClosed;
-        private readonly Action<string> _OnEvent;
+        private readonly Action<string> _OnLog;
         private readonly Action<Exception> _OnError;
 
         private ISession<TPacket> _Session;
@@ -32,9 +32,12 @@ namespace SimpleSock
             , Action<ISession, TPacket> onRecv = null
             , Action<ISession, TPacket> onSent = null
             , Action<ISession> onClose = null
-            , Action<string> onEvent = null
+            , Action<string> onLog = null
             , Action<Exception> onError = null)
         {
+            ExceptionHelper.ThrowExceptionIfIsNull(ip);
+            ExceptionHelper.ThrowExceptionIfIsNull(packetConverter);
+
             _IP = ip;
             _Port = port;
             _PacketConverter = packetConverter;
@@ -42,7 +45,7 @@ namespace SimpleSock
             _OnRecv = onRecv ?? new Action<ISession, TPacket>((s, p) => { });
             _OnSent = onSent ?? new Action<ISession, TPacket>((s, p) => { });
             _OnClosed = onClose ?? new Action<ISession>((s) => { });
-            _OnEvent = onEvent ?? new Action<string>((m) => { });
+            _OnLog = onLog ?? new Action<string>((m) => { });
             _OnError = onError ?? new Action<Exception>((e) => { });
         }
 
@@ -55,12 +58,12 @@ namespace SimpleSock
                 if (_Session != null)
                     return;
 
-                _OnEvent?.Invoke($"try connect to IP: {_IP}, Port: {_Port}");
+                _OnLog?.Invoke($"try connect to {{ ip: {_IP}, port: {_Port} }}");
 
                 TcpClient client = new TcpClient();
                 await client.ConnectAsync(_IP, _Port);
 
-                _OnEvent?.Invoke($"connected IP: {_IP}, Port: {_Port}");
+                _OnLog?.Invoke($"connected {{ ip: {_IP}, port: {_Port} }}");
 
                 // Session 생성
                 var session = new Session<TPacket>(
@@ -68,9 +71,9 @@ namespace SimpleSock
                     , packetConverter: _PacketConverter
                     , onRecv: _OnRecv
                     , onSent: _OnSent
-                    , onClose: _OnClosed
+                    , onClose: OnSessionClosed
                     , onError: _OnError
-                    , onEvent: _OnEvent
+                    , onLog: _OnLog
                 );
                 _Session = session;
             }
@@ -95,8 +98,11 @@ namespace SimpleSock
 
                 await _Session.CloseAsync();
 
-                _Session.Dispose();
-                _Session = null;
+                if (_Session != null)
+                {
+                    _Session.Dispose();
+                    _Session = null;
+                }
             }
             catch (Exception ex)
             {
@@ -114,6 +120,18 @@ namespace SimpleSock
                 return Task.FromResult(0);
 
             return _Session.SendAsync(packet);
+        }
+
+        private void OnSessionClosed(ISession session)
+        {
+            if (_Session != null
+                && _Session.SessionId == session.SessionId)
+            {
+                _Session.Dispose();
+                _Session = null;
+            }
+
+            _OnClosed.Invoke(session);
         }
 
     }

@@ -21,7 +21,7 @@ namespace SimpleSock.Models
         private readonly Action<ISession, TPacket> _OnRecv;
         private readonly Action<ISession, TPacket> _OnSent;
         private readonly Action<ISession> _OnClosed;
-        private readonly Action<string> _OnEvent;
+        private readonly Action<string> _OnLog;
         private readonly Action<Exception> _OnError;
 
         private bool _Disposed, _IsDisposing;
@@ -58,7 +58,7 @@ namespace SimpleSock.Models
             , Action<ISession, TPacket> onRecv = null
             , Action<ISession, TPacket> onSent = null
             , Action<ISession> onClose = null
-            , Action<string> onEvent = null
+            , Action<string> onLog = null
             , Action<Exception> onError = null)
         {
             _SessionId = Guid.NewGuid();
@@ -72,7 +72,7 @@ namespace SimpleSock.Models
             _OnRecv = onRecv ?? new Action<ISession, TPacket>((s, p) => { });
             _OnSent = onSent ?? new Action<ISession, TPacket>((s, p) => { });
             _OnClosed = onClose ?? new Action<ISession>((s) => { });
-            _OnEvent = onEvent ?? new Action<string>((m) => { });
+            _OnLog = onLog ?? new Action<string>((m) => { });
             _OnError = onError ?? new Action<Exception>((e) => { });
 
             BeginReceive();
@@ -102,7 +102,7 @@ namespace SimpleSock.Models
                 recvBuffer = new ReceiveBuffer(4096);
                 var byteConsumed = 0;
 
-                _OnEvent.Invoke($"Start ReceiveTask (Session: {this})");
+                _OnLog.Invoke($"start receive task (session: {this})");
 
                 while (!cancelToken.IsCancellationRequested && netStream.CanRead)
                 {
@@ -157,7 +157,7 @@ namespace SimpleSock.Models
 
             recvBuffer?.Dispose();
 
-            _OnEvent.Invoke($"Stop ReceiveTask (Session: {this})");
+            _OnLog.Invoke($"stop receive task (session: {this})");
         }
 
         public Task<int> SendAsync(TPacket packet)

@@ -49,7 +49,7 @@ namespace SimpleSock.Test
                 Console.WriteLine($"Event: Closed ({session})");
             };
 
-            Action<string> onEvent = (e) =>
+            Action<string> onLog = (e) =>
             {
                 Console.WriteLine(e);
             };
@@ -61,12 +61,14 @@ namespace SimpleSock.Test
                 Console.WriteLine();
             };
 
+
             client = new SimpleSockClient<Packet>("127.0.0.1", 5020, new PacketConverterSample()
-                , onRecv: onRecv
-                , onSent: onSent
-                , onEvent: onEvent
-                , onError: onError
-                , onClose: onClose);
+               , onRecv: onRecv
+               , onSent: onSent
+               , onLog: onLog
+               , onError: onError
+               , onClose: onClose);
+
 
             Task connTask() => Task.Run(async () =>
             {
@@ -78,7 +80,9 @@ namespace SimpleSock.Test
                     {
                         await client.ConnectAsync();
 
-                        break;
+                        isConnecetd = true;
+
+                        await Task.Delay(1000);
                     }
                     catch (Exception ex)
                     {
@@ -119,5 +123,5 @@ namespace SimpleSock.Test
         }
 
     }
-    
+
 }

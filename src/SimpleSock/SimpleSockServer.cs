@@ -1,5 +1,6 @@
 ﻿using SimpleSock.Containers;
 using SimpleSock.Extensions;
+using SimpleSock.Helpers;
 using SimpleSock.Interfaces;
 using SimpleSock.Models;
 using System;
@@ -13,30 +14,50 @@ namespace SimpleSock
 {
     public class SimpleSockServer<TPacket>
     {
-        private readonly SessionContainer<Session<TPacket>> _SessionContainer;
-        private readonly IPacketConverter<TPacket> _PacketConverter;
-        private readonly SemaphoreSlim _AsyncLock = new SemaphoreSlim(1, 1);
         private readonly string _IP;
         private readonly int _Port;
         private readonly int _BackLog = 1;
+        private readonly IPacketConverter<TPacket> _PacketConverter;
+        private readonly SessionContainer<Session<TPacket>> _SessionContainer;
+        private readonly SemaphoreSlim _AsyncLock = new SemaphoreSlim(1, 1);
 
         private readonly Action<ISession> _OnAccepted;
         private readonly Action<ISession, TPacket> _OnRecv;
+        private readonly Action<ISession, TPacket> _OnSent;
+        private readonly Action<ISession> _OnClosed;
+        private readonly Action<string> _OnLog;
+        private readonly Action<Exception> _OnError;
 
         private TcpListener _Listner;
         private CancellationTokenSource _Canceller;
         private Task _AcceptTask;
 
 
-        public SimpleSockServer(string ip, int port, IPacketConverter<TPacket> packetConverter, Action<ISession, TPacket> onRecv = null, Action<ISession> onAccepted = null)
+        public SimpleSockServer(
+            string ip
+            , int port
+            , IPacketConverter<TPacket> packetConverter
+            , Action<ISession> onAccepted = null
+            , Action<ISession, TPacket> onRecv = null
+            , Action<ISession, TPacket> onSent = null
+            , Action<ISession> onClose = null
+            , Action<string> onLog = null
+            , Action<Exception> onError = null)
         {
+            ExceptionHelper.ThrowExceptionIfIsNull(ip);
+            ExceptionHelper.ThrowExceptionIfIsNull(packetConverter);
+
             _SessionContainer = new SessionContainer<Session<TPacket>>();
             _IP = ip;
             _Port = port;
             _PacketConverter = packetConverter;
             
-            _OnRecv = onRecv ?? new Action<ISession, TPacket>((s, p) => { });
             _OnAccepted = onAccepted ?? new Action<ISession>(s => { });
+            _OnRecv = onRecv ?? new Action<ISession, TPacket>((s, p) => { });
+            _OnSent = onSent ?? new Action<ISession, TPacket>((s, p) => { });
+            _OnClosed = onClose ?? new Action<ISession>((s) => { });
+            _OnLog = onLog ?? new Action<string>((m) => { });
+            _OnError = onError ?? new Action<Exception>((e) => { });
         }
 
         public void Start()
@@ -48,10 +69,11 @@ namespace SimpleSock
                 throw new Exception($"Invalid IP: {_IP}");
 
             TcpListener listener = new TcpListener(ipAddress, _Port);
-            listener.Start(_BackLog);
+            listener.Start();
+
+            _OnLog.Invoke($"server started, IP: {_IP}, Port: {_Port}");
 
             _Listner = listener;
-
             _Canceller = new CancellationTokenSource();
 
             _AcceptTask = DoAcceptAsync(_Listner, _Canceller.Token);
@@ -64,20 +86,23 @@ namespace SimpleSock
 
             _Canceller.Cancel();
             _Canceller.Dispose();
-            _Canceller = null;
 
             _Listner.Stop();
-            _Listner = null;
 
             if (_AcceptTask != null)
                 _AcceptTask.GetAwaiter().GetResult();
 
             _SessionContainer.Clear();
+
+            _OnLog.Invoke("server stopped");
+
+            _Canceller = null;
+            _Listner = null;
         }
 
         private async Task DoAcceptAsync(TcpListener listener, CancellationToken cancelToken)
         {
-            Console.WriteLine("[EV] Accept start");
+            _OnLog.Invoke("start accept task...");
 
             try
             {
@@ -89,7 +114,10 @@ namespace SimpleSock
                         client: acceptedClient
                         , packetConverter: _PacketConverter
                         , onRecv: _OnRecv
-                        , onClose: Session_Closed
+                        , onSent: _OnSent
+                        , onClose: OnSessionClosed
+                        , onError: _OnError
+                        , onLog: _OnLog
                     );
 
                     if (_SessionContainer.AddSession(session))
@@ -110,23 +138,23 @@ namespace SimpleSock
                 {
                     if (se.IsIgnorableSocketException() == false)
                     {
-                        //_Logger.WriteErrorLog(se);
+                        _OnError.Invoke(ex);
                     }
                 }
                 else
                 {
-                    //    _Logger.WriteErrorLog(ex);
+                    _OnError.Invoke(ex);
                 }
             }
 
-            Console.WriteLine("[EV] Accept end");
+            _OnLog.Invoke("stop accept task...");
         }
 
-        private void Session_Closed(ISession session)
+        private void OnSessionClosed(ISession session)
         {
-            Console.WriteLine($"[EV] session closed: {session}");
-
             _SessionContainer.RemoveSession(session.SessionId, out _);
+
+            _OnClosed.Invoke(session);
         }
         
     }
