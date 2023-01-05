@@ -37,7 +37,7 @@ namespace SimpleSock
             string ip
             , int port
             , IPacketConverter<TPacket> packetConverter
-            , int? acceptLimit = 0
+            , int? acceptLimit = null
             , Action<ISession> onAccepted = null
             , Action<ISession, TPacket> onRecv = null
             , Action<ISession, TPacket> onSent = null

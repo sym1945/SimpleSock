@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 
-namespace SimpleSock.Test
+namespace SimpleSock.Benchmark
 {
     [MemoryDiagnoser]
     public class StructBenchmark

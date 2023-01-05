@@ -1,10 +1,9 @@
 ﻿using SimpleSock.Helpers;
 using SimpleSock.Interfaces;
-using SimpleSock.Test.Models;
 using System;
 using System.Text;
 
-namespace SimpleSock.Test.Implements
+namespace SimpleSock.Sample.Shared
 {
     public class PacketConverterSample : IPacketConverter<Packet>
     {

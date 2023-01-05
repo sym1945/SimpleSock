@@ -1,27 +1,17 @@
-﻿using BenchmarkDotNet.Running;
-using SimpleSock.Interfaces;
-using SimpleSock.Models;
-using SimpleSock.Test.Implements;
-using SimpleSock.Test.Models;
+﻿using SimpleSock.Interfaces;
+using SimpleSock.Sample.Shared;
 using System;
-using System.Buffers.Binary;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
 using System.Linq;
-using System.Net.Sockets;
-using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace SimpleSock.Test
+namespace SimpleSock.Sample.Client
 {
     class Program
     {
         static void Main(string[] args)
         {
-            //BenchmarkRunner.Run<MarshalBenchmark>();
             SimpleSockClient<Packet> client = null;
 
             Action<ISession, Packet> onRecv = (session, packet) =>
@@ -113,15 +103,5 @@ namespace SimpleSock.Test
                 }
             }
         }
-
-        private static void PrintBytes(byte[] bytes)
-        {
-            for (int i = 0; i < bytes.Length; i++)
-                Console.Write($"{bytes[i]} ");
-
-            Console.WriteLine();
-        }
-
     }
-
 }

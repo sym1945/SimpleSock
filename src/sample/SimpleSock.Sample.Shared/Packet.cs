@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Text;
 
-namespace SimpleSock.Test.Models
+namespace SimpleSock.Sample.Shared
 {
     public class Packet
     {

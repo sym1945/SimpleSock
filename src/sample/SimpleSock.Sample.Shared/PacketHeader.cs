@@ -1,9 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using System.Text;
+﻿using System.Runtime.InteropServices;
 
-namespace SimpleSock.Test.Models
+namespace SimpleSock.Sample.Shared
 {
     [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct PacketHeader
