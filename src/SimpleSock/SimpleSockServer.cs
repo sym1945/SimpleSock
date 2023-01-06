@@ -102,6 +102,22 @@ namespace SimpleSock
             _Listner = null;
         }
 
+        public async Task BroadcastAsync(TPacket packet)
+        {
+            foreach (var session in _SessionContainer.GetSessions())
+            {
+                await session.SendAsync(packet);
+            }
+        }
+
+        public Task<int> SendAsync(Guid sessionId, TPacket packet)
+        {
+            if (_SessionContainer.GetSession(sessionId, out Session<TPacket> session))
+                return session.SendAsync(packet);
+            else
+                return Task.FromResult(0);
+        }
+
         private async Task DoAcceptAsync(TcpListener listener, int? acceptLimit, CancellationToken cancelToken)
         {
             _OnLog.Invoke("start accept task...");
@@ -134,7 +150,9 @@ namespace SimpleSock
 
                     if (_SessionContainer.AddSession(session))
                     {
+                        _OnLog.Invoke($"session accepted... {session}");
                         _OnLog.Invoke($"session added: {session}, total session count: {_SessionContainer.SessionCount}");
+
                         _OnAccepted.Invoke(session);
 
                         session.StartReceive();

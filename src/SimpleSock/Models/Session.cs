@@ -232,6 +232,7 @@ namespace SimpleSock.Models
             _Closed = true;
             _IsClosing = false;
 
+            _OnLog.Invoke($"session closed... {this}");
             _OnClosed.Invoke(this);
         }
 

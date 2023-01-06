@@ -1,4 +1,5 @@
-﻿using SimpleSock.Helpers;
+﻿using SimpleSock.Enums;
+using SimpleSock.Helpers;
 using SimpleSock.Interfaces;
 using SimpleSock.Models;
 using System;
@@ -23,6 +24,17 @@ namespace SimpleSock
         private readonly Action<Exception> _OnError;
 
         private ISession<TPacket> _Session;
+
+        public bool IsConnected
+        {
+            get
+            {
+                if (_Session == null)
+                    return false;
+
+                return _Session.State == SessionState.Connected;
+            }
+        }
 
 
         public SimpleSockClient(
