@@ -25,6 +25,11 @@ namespace SimpleSock
 
         private ISession<TPacket> _Session;
 
+        public ISession<TPacket> Session
+        {
+            get { return _Session; }
+        }
+
         public bool IsConnected
         {
             get
@@ -61,14 +66,14 @@ namespace SimpleSock
             _OnError = onError ?? new Action<Exception>((e) => { });
         }
 
-        public async Task ConnectAsync()
+        public async Task<ISession> ConnectAsync()
         {
             try
             {
                 await _AsyncLock.WaitAsync();
 
                 if (_Session != null)
-                    return;
+                    return _Session;
 
                 _OnLog?.Invoke($"try connect to {{ ip: {_IP}, port: {_Port} }}");
 
@@ -89,6 +94,8 @@ namespace SimpleSock
                 );
                 session.StartReceive();
                 _Session = session;
+
+                return _Session;
             }
             catch (Exception ex)
             {
