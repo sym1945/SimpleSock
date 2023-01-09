@@ -19,7 +19,9 @@ namespace SimpleSock
         private readonly int? _AcceptLimit;
         private readonly IPacketConverter<TPacket> _PacketConverter;
         private readonly SessionContainer<Session<TPacket>> _SessionContainer;
-        private readonly SemaphoreSlim _AsyncLock = new SemaphoreSlim(1, 1);
+        private readonly object _SyncLock0 = new object();
+        private readonly object _SyncLock1 = new object();
+
 
         private readonly Action<ISession> _OnAccepted;
         private readonly Action<ISession, TPacket> _OnRecv;
@@ -28,9 +30,11 @@ namespace SimpleSock
         private readonly Action<string> _OnLog;
         private readonly Action<Exception> _OnError;
 
+        private bool _ServerStarted;
         private TcpListener _Listner;
         private CancellationTokenSource _Canceller;
         private Task _AcceptTask;
+        private Timer _DelayTimer;
 
 
         public SimpleSockServer(
@@ -64,42 +68,43 @@ namespace SimpleSock
 
         public void Start()
         {
-            if (_Listner != null || _Canceller != null)
-                return;
+            lock (_SyncLock0)
+            {
+                if (_ServerStarted)
+                    return;
+                _ServerStarted = true;
 
-            if (!IPAddress.TryParse(_IP, out IPAddress ipAddress))
-                throw new Exception($"Invalid IP: {_IP}");
+                _OnLog.Invoke($"server started");
 
-            TcpListener listener = new TcpListener(ipAddress, _Port);
-            listener.Start();
-
-            _OnLog.Invoke($"server started, IP: {_IP}, Port: {_Port}");
-
-            _Listner = listener;
-            _Canceller = new CancellationTokenSource();
-
-            _AcceptTask = DoAcceptAsync(_Listner, _AcceptLimit, _Canceller.Token);
+                StartAcceptTask();
+            }
         }
 
         public void Stop()
         {
-            if (_Listner == null || _Canceller == null)
-                return;
+            lock (_SyncLock0)
+            {
+                if (!_ServerStarted)
+                    return;
+                _ServerStarted = false;
 
-            _Canceller.Cancel();
-            _Canceller.Dispose();
+                if (_Listner != null)
+                    _Listner.Stop();
 
-            _Listner.Stop();
+                if (_Canceller != null)
+                    _Canceller.Cancel();
 
-            if (_AcceptTask != null)
-                _AcceptTask.GetAwaiter().GetResult();
+                if (_AcceptTask != null)
+                {
+                    _AcceptTask.GetAwaiter().GetResult();
+                    _AcceptTask.Dispose();
+                    _AcceptTask = null;
+                }
 
-            _SessionContainer.Clear();
+                _SessionContainer.Clear();
 
-            _OnLog.Invoke("server stopped");
-
-            _Canceller = null;
-            _Listner = null;
+                _OnLog.Invoke("server stopped");
+            }
         }
 
         public async Task BroadcastAsync(TPacket packet)
@@ -116,6 +121,53 @@ namespace SimpleSock
                 return session.SendAsync(packet);
             else
                 return Task.FromResult(0);
+        }
+
+        private void StartAcceptTask()
+        {
+            if (_Listner != null || _Canceller != null)
+                return;
+
+            if (!IPAddress.TryParse(_IP, out IPAddress ipAddress))
+                throw new Exception($"invalid IP: {_IP}");
+
+            TcpListener listener = new TcpListener(ipAddress, _Port);
+            listener.Start();
+
+            _OnLog.Invoke($"server listening... {{ ip: {_IP}, port: {_Port} }}");
+
+            _Listner = listener;
+            _Canceller = new CancellationTokenSource();
+
+            _AcceptTask = DoAcceptAsync(_Listner, _AcceptLimit, _Canceller.Token)
+                .ContinueWith(t =>
+                {
+                    _Canceller?.Dispose();
+                    _Canceller = null;
+                    _Listner = null;
+                });
+        }
+
+        private void RestartAcceptTask(int dueTime)
+        {
+            lock (_SyncLock1)
+            {
+                if (_DelayTimer != null)
+                    return;
+
+                _DelayTimer = new Timer(
+                    callback: (o) =>
+                    {
+                        StartAcceptTask();
+
+                        _DelayTimer?.Dispose();
+                        _DelayTimer = null;
+                    }
+                    , state: null
+                    , dueTime: dueTime
+                    , period: Timeout.Infinite
+                );
+            }
         }
 
         private async Task DoAcceptAsync(TcpListener listener, int? acceptLimit, CancellationToken cancelToken)
@@ -138,16 +190,6 @@ namespace SimpleSock
                         , onLog: _OnLog
                     );
 
-                    if (acceptLimit.HasValue
-                        && _SessionContainer.SessionCount >= acceptLimit.Value)
-                    {
-                        // 설정한 인원 외에 접속하면 바로 해제 박음 ㅅㄱ
-                        _OnLog.Invoke($"can't accept session: {session}. exceed limit session count: {acceptLimit.Value}");
-
-                        session.Dispose();
-                        continue;
-                    }
-
                     if (_SessionContainer.AddSession(session))
                     {
                         _OnLog.Invoke($"session accepted... {session}");
@@ -159,6 +201,16 @@ namespace SimpleSock
                     }
                     else
                         session.Dispose();
+
+
+                    if (acceptLimit.HasValue
+                        && _SessionContainer.SessionCount >= acceptLimit.Value)
+                    {
+                        // 제한 인원 수용하면 accept 그만하쟈
+                        listener.Stop();
+                        _OnLog.Invoke($"session accept limited... limit session count: {acceptLimit.Value}");
+                        break;
+                    }
                 }
             }
             catch (OperationCanceledException)
@@ -187,9 +239,18 @@ namespace SimpleSock
 
         private void OnSessionClosed(ISession session)
         {
+            if (!_ServerStarted)
+                return;
+
             _SessionContainer.RemoveSession(session.SessionId, out _);
 
             _OnLog.Invoke($"session removed: {session}, total session count: {_SessionContainer.SessionCount}");
+
+            if (_AcceptLimit.HasValue
+                && _SessionContainer.SessionCount < _AcceptLimit.Value)
+            {
+                RestartAcceptTask(3000);
+            }
 
             _OnClosed.Invoke(session);
         }
