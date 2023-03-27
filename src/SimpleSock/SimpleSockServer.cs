@@ -36,6 +36,16 @@ namespace SimpleSock
         private Task _AcceptTask;
         private Timer _DelayTimer;
 
+        public bool ServerStarted
+        {
+            get { return _ServerStarted; }
+        }
+
+        public int SessionCount
+        { 
+            get { return _SessionContainer.SessionCount; }
+        }
+
 
         public SimpleSockServer(
             string ip

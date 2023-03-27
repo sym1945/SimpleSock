@@ -24,8 +24,8 @@ namespace SimpleSock.Models
         private readonly Action<string> _OnLog;
         private readonly Action<Exception> _OnError;
 
-        private bool _Disposed, _IsDisposing;
-        private bool _Closed, _IsClosing;
+        private int _Disposed = 0;
+        private int _Closed = 0;
         private Task _RecvTask;
         private CancellationTokenSource _RecvTaskCancller;
 
@@ -39,7 +39,7 @@ namespace SimpleSock.Models
         {
             get
             {
-                if (_Closed)
+                if (_Closed > 0)
                     return SessionState.NotConnected;
                 else
                     return SessionState.Connected;
@@ -82,13 +82,21 @@ namespace SimpleSock.Models
 
         internal void StartReceive()
         {
-            if (_Closed)
+            if (_Closed > 0)
                 return;
             if (_RecvTask != null || _RecvTaskCancller != null)
                 return;
 
             _RecvTaskCancller = new CancellationTokenSource();
-            _RecvTask = DoReceiveAsync(_Stream, _RecvTaskCancller.Token).ContinueWith(t => Close());
+            _RecvTask = DoReceiveAsync(_Stream, _RecvTaskCancller.Token)
+                            .ContinueWith(t =>
+                            {
+                                // 상대측에서 먼저 끊는 경우 Close 호출 안될 수도 있으니... 
+                                Close();
+
+                                // 완전 닫혀다고 외부에 알리자...
+                                Closed();
+                            });
         }
 
         private async Task DoReceiveAsync(NetworkStream netStream, CancellationToken cancelToken)
@@ -117,7 +125,7 @@ namespace SimpleSock.Models
 
                     recvBuffer.Accumulate(bytesRead);
 
-                    if (_Closed)
+                    if (_Closed > 0)
                         break;
 
                     while (_PacketConverter.Filter(recvBuffer.Bytes, recvBuffer.BytesBuffered, ref byteConsumed, out TPacket packet))
@@ -134,6 +142,7 @@ namespace SimpleSock.Models
             }
             catch (OperationCanceledException)
             {
+                throw;
             }
             catch (ObjectDisposedException)
             {
@@ -152,10 +161,12 @@ namespace SimpleSock.Models
                     _OnError.Invoke(ex);
                 }
             }
+            finally
+            {
+                recvBuffer?.Dispose();
 
-            recvBuffer?.Dispose();
-
-            _OnLog.Invoke($"stop receive task... {this}");
+                _OnLog.Invoke($"stop receive task... {this}");
+            }
         }
 
         public Task<int> SendAsync(TPacket packet)
@@ -176,7 +187,7 @@ namespace SimpleSock.Models
 
         protected async Task<int> SendAsyncInner(NetworkStream netStream, TPacket packet, CancellationToken cancelToken)
         {
-            if (_Closed || !netStream.CanWrite)
+            if (_Closed > 0 || !netStream.CanWrite)
                 return 0;
 
             var bytes = _PacketConverter.ToBytes(packet);
@@ -219,42 +230,36 @@ namespace SimpleSock.Models
 
         private void Close()
         {
-            if (_Closed || _IsClosing)
+            if (Interlocked.CompareExchange(ref _Closed, 1, 0) == 1)
                 return;
-            _IsClosing = true;
 
             _Stream.Close();
             _Client.Close();
+        }
 
-            _Stream.Dispose();
-            _Client.Dispose();
-
-            _Closed = true;
-            _IsClosing = false;
-
+        private void Closed()
+        {
             _OnLog.Invoke($"session closed... {this}");
             _OnClosed.Invoke(this);
         }
 
         public async Task CloseAsync()
         {
-            if (_RecvTaskCancller == null || _RecvTask == null)
+            if (_RecvTaskCancller != null)
             {
-                // StartReceive 호출 전 Close 된 경우
-                Close();
-                return;
+                _RecvTaskCancller.Cancel();
             }
 
-            _RecvTaskCancller.Cancel();
-            _Stream.Close();
+            // NetworkStream.ReadAsync 대기중엔 CancelToken에 반응없음...
+            // 그냥 강제로 Stream Close 시킨다.
+            Close();
 
-            await _RecvTask;
-
-            _RecvTaskCancller.Dispose();
-            _RecvTaskCancller = null;
-            _RecvTask = null;
+            if (_RecvTask != null)
+            {
+                if (!_RecvTask.IsCompleted)
+                    await _RecvTask;
+            }
         }
-
 
         public void Dispose()
         {
@@ -264,20 +269,34 @@ namespace SimpleSock.Models
 
         protected virtual void Dispose(bool disposing)
         {
-            if (_Disposed || _IsDisposing)
+            if (Interlocked.CompareExchange(ref _Disposed, 1, 0) == 1)
                 return;
-            _IsDisposing = true;
 
-            var closeTask = CloseAsync();
+            var closeTask = CloseAsync()
+                .ContinueWith(t =>
+                {
+                    if (_RecvTaskCancller != null)
+                    {
+                        _RecvTaskCancller.Dispose();
+                        _RecvTaskCancller = null;
+                    }
+
+                    if (_RecvTask != null)
+                    {
+                        _RecvTask.Dispose();
+                        _RecvTask = null;
+                    }
+
+                    _Stream.Dispose();
+                    _Client.Dispose();
+                });
+
             if (disposing)
             {
             }
             else
             {
             }
-
-            _Disposed = true;
-            _IsDisposing = false;
         }
 
         public override string ToString()
