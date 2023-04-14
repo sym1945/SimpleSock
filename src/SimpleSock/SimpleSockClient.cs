@@ -48,6 +48,7 @@ namespace SimpleSock
             , IPacketConverter<TPacket> packetConverter
             , Action<ISession, TPacket> onRecv = null
             , Action<ISession, TPacket> onSent = null
+            , Action<ISession> onConnected = null
             , Action<ISession> onClose = null
             , Action<string> onLog = null
             , Action<Exception> onError = null)
@@ -92,8 +93,10 @@ namespace SimpleSock
                     , onError: _OnError
                     , onLog: _OnLog
                 );
-                session.StartReceive();
+
                 _Session = session;
+
+                session.StartReceive();
 
                 return _Session;
             }
